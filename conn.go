@@ -671,9 +671,6 @@ func (c *Conn) processHandshakePacket(pkt *packet, dtlsHandshake *handshake.Hand
 
 		if pkt.shouldEncrypt {
 			var err error
-
-			fmt.Println("use cipherSuite handleshake:", c.state.cipherSuite)
-
 			rawPacket, err = c.state.cipherSuite.Encrypt(pkt.record, rawPacket)
 			if err != nil {
 				return nil, err
