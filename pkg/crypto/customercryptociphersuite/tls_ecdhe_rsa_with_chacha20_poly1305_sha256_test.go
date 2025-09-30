@@ -24,14 +24,12 @@ func TestChaChaEncryptDecrypt(t *testing.T) {
 		t.Fatalf("rand read serverRandom: %v", err)
 	}
 
-	// 初始化 client-side cipher (isClient = true)
 	csClient := &TLSEcdheRsaWithChaCha20Poly1305Sha256{
 	}
 	if err := csClient.Init(masterSecret, clientRandom, serverRandom, true); err != nil {
 		t.Fatalf("client Init failed: %v", err)
 	}
 
-	// 初始化 server-side cipher (isClient = false)
 	csServer := &TLSEcdheRsaWithChaCha20Poly1305Sha256{
 	}
 	if err := csServer.Init(masterSecret, clientRandom, serverRandom, false); err != nil {
@@ -58,19 +56,16 @@ func TestChaChaEncryptDecrypt(t *testing.T) {
 	copy(raw[:len(hb)], hb)
 	copy(raw[len(hb):], plaintext)
 
-	// client 加密
 	encrypted, err := csClient.Encrypt(rl, raw)
 	if err != nil {
 		t.Fatalf("Encrypt failed: %v", err)
 	}
 
-	// server 解密 —— 传入一个零值 header，Decrypt 会先从输入解析 header（header.Unmarshal）
 	decrypted, err := csServer.Decrypt(recordlayer.Header{}, encrypted)
 	if err != nil {
 		t.Fatalf("Decrypt failed: %v", err)
 	}
 
-	// 解密后的 payload 在 header bytes 之后
 	got := decrypted[len(hb):]
 	if !bytes.Equal(got, plaintext) {
 		t.Fatalf("plaintext mismatch\ngot:  %x\nwant: %x", got, plaintext)

@@ -58,7 +58,6 @@ func (c *TLSEcdheRsaWithChaCha20Poly1305Sha256) init(masterSecret, clientRandom,
 		return errors.New("masterSecret is nil")
 	}
 
-	// macLen=0 for AEAD (no separate MAC), keyLen=32 for chacha, ivLen=12
 	keys, err := prf.GenerateEncryptionKeys(masterSecret, clientRandom, serverRandom, rfMacLen, prfKeyLen, prfIvLen, hashFunc)
 	if err != nil {
 		return err
@@ -79,7 +78,6 @@ func (c *TLSEcdheRsaWithChaCha20Poly1305Sha256) init(masterSecret, clientRandom,
 	return nil
 }
 
-// Init initializes the internal Cipher with keying material.
 func (c *TLSEcdheRsaWithChaCha20Poly1305Sha256) Init(masterSecret, clientRandom, serverRandom []byte, isClient bool) error {
 	const (
 		prfMacLen = 0

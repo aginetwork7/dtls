@@ -50,13 +50,11 @@ func (c *ChaCha) Encrypt(pkt *recordlayer.RecordLayer, raw []byte) ([]byte, erro
 	payload := raw[pkt.Header.Size():]
 	raw = raw[:pkt.Header.Size()]
 
-	// Nonce = 4B 固定IV + 8B 显式随机
 	nonce := append(append([]byte{}, c.localWriteIV[:4]...), make([]byte, 8)...)
 	if _, err := rand.Read(nonce[4:]); err != nil {
 		return nil, err
 	}
 
-	// AdditionalData = record header + length
 	var additionalData []byte
 	if pkt.Header.ContentType == protocol.ContentTypeConnectionID {
 		additionalData = generateAEADAdditionalDataCID(&pkt.Header, len(payload))
@@ -66,11 +64,9 @@ func (c *ChaCha) Encrypt(pkt *recordlayer.RecordLayer, raw []byte) ([]byte, erro
 
 	encryptedPayload := c.localCipher.Seal(nil, nonce, payload, additionalData)
 
-	// 把显式 8B Nonce + ciphertext 写回 raw
 	encryptedPayload = append(nonce[4:], encryptedPayload...)
 	raw = append(raw, encryptedPayload...)
 
-	// 更新 record size (包含 explicit nonce + tag)
 	binary.BigEndian.PutUint16(raw[pkt.Header.Size()-2:], uint16(len(raw)-pkt.Header.Size()))
 
 	return raw, nil
@@ -88,11 +84,9 @@ func (c *ChaCha) Decrypt(header recordlayer.Header, in []byte) ([]byte, error) {
 		return nil, fmt.Errorf("not enough room for nonce")
 	}
 
-	// Nonce = 4B 固定IV + 8B 显式
 	nonce := append(append([]byte{}, c.remoteWriteIV[:4]...), in[header.Size():header.Size()+8]...)
 	out := in[header.Size()+8:]
 
-	// AdditionalData
 	var additionalData []byte
 	if header.ContentType == protocol.ContentTypeConnectionID {
 		additionalData = generateAEADAdditionalDataCID(&header, len(out)-chacha20poly1305.Overhead)
@@ -100,7 +94,6 @@ func (c *ChaCha) Decrypt(header recordlayer.Header, in []byte) ([]byte, error) {
 		additionalData = generateAEADAdditionalData(&header, len(out)-chacha20poly1305.Overhead)
 	}
 
-	// Decrypt
 	plain, err := c.remoteCipher.Open(out[:0], nonce, out, additionalData)
 	if err != nil {
 		return nil, fmt.Errorf("decrypt failed: %v", err)
@@ -111,8 +104,6 @@ func (c *ChaCha) Decrypt(header recordlayer.Header, in []byte) ([]byte, error) {
 func generateAEADAdditionalData(h *recordlayer.Header, payloadLen int) []byte {
 	var additionalData [13]byte
 
-	// SequenceNumber MUST be set first
-	// we only want uint48, clobbering an extra 2 (using uint64, Golang doesn't have uint48)
 	binary.BigEndian.PutUint64(additionalData[:], h.SequenceNumber)
 	binary.BigEndian.PutUint16(additionalData[:], h.Epoch)
 	additionalData[8] = byte(h.ContentType)
