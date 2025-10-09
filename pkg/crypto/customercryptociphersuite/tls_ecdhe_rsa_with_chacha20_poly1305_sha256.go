@@ -14,6 +14,10 @@ import (
 	"github.com/pion/dtls/v3/pkg/protocol/recordlayer"
 )
 
+type TLSEcdheEcdsaWithAes128GcmSha256 struct {
+	internal_ciphersuite.TLSEcdheEcdsaWithAes128GcmSha256
+}
+
 type TLSEcdheRsaWithChaCha20Poly1305Sha256 struct {
 	chacha atomic.Value
 }
@@ -32,11 +36,11 @@ func (c *TLSEcdheRsaWithChaCha20Poly1305Sha256) ECC() bool {
 
 func (c *TLSEcdheRsaWithChaCha20Poly1305Sha256) ID() internal_ciphersuite.ID {
 
-	return internal_ciphersuite.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
+	return internal_ciphersuite.TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256
 }
 
 func (c *TLSEcdheRsaWithChaCha20Poly1305Sha256) String() string {
-	return "TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256"
+	return "TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256"
 }
 
 func (c *TLSEcdheRsaWithChaCha20Poly1305Sha256) HashFunc() func() hash.Hash {
