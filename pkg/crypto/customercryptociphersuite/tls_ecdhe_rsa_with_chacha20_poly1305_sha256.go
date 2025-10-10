@@ -14,48 +14,43 @@ import (
 	"github.com/pion/dtls/v3/pkg/protocol/recordlayer"
 )
 
-type TLSEcdheEcdsaWithAes128GcmSha256 struct {
-	internal_ciphersuite.TLSEcdheEcdsaWithAes128GcmSha256
-}
-
-type TLSEcdheRsaWithChaCha20Poly1305Sha256 struct {
+type TLSEcdheEcdsaWithChaCha20Poly1305Sha256 struct {
 	chacha atomic.Value
 }
 
-func (c *TLSEcdheRsaWithChaCha20Poly1305Sha256) CertificateType() clientcertificate.Type {
+func (c *TLSEcdheEcdsaWithChaCha20Poly1305Sha256) CertificateType() clientcertificate.Type {
 	return clientcertificate.ECDSASign
 }
 
-func (c *TLSEcdheRsaWithChaCha20Poly1305Sha256) KeyExchangeAlgorithm() internal_ciphersuite.KeyExchangeAlgorithm {
+func (c *TLSEcdheEcdsaWithChaCha20Poly1305Sha256) KeyExchangeAlgorithm() internal_ciphersuite.KeyExchangeAlgorithm {
 	return internal_ciphersuite.KeyExchangeAlgorithmEcdhe
 }
 
-func (c *TLSEcdheRsaWithChaCha20Poly1305Sha256) ECC() bool {
+func (c *TLSEcdheEcdsaWithChaCha20Poly1305Sha256) ECC() bool {
 	return true
 }
 
-func (c *TLSEcdheRsaWithChaCha20Poly1305Sha256) ID() internal_ciphersuite.ID {
-
+func (c *TLSEcdheEcdsaWithChaCha20Poly1305Sha256) ID() internal_ciphersuite.ID {
 	return internal_ciphersuite.TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256
 }
 
-func (c *TLSEcdheRsaWithChaCha20Poly1305Sha256) String() string {
+func (c *TLSEcdheEcdsaWithChaCha20Poly1305Sha256) String() string {
 	return "TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256"
 }
 
-func (c *TLSEcdheRsaWithChaCha20Poly1305Sha256) HashFunc() func() hash.Hash {
+func (c *TLSEcdheEcdsaWithChaCha20Poly1305Sha256) HashFunc() func() hash.Hash {
 	return sha256.New
 }
 
-func (c *TLSEcdheRsaWithChaCha20Poly1305Sha256) AuthenticationType() internal_ciphersuite.AuthenticationType {
+func (c *TLSEcdheEcdsaWithChaCha20Poly1305Sha256) AuthenticationType() internal_ciphersuite.AuthenticationType {
 	return internal_ciphersuite.AuthenticationTypeCertificate
 }
 
-func (c *TLSEcdheRsaWithChaCha20Poly1305Sha256) IsInitialized() bool {
+func (c *TLSEcdheEcdsaWithChaCha20Poly1305Sha256) IsInitialized() bool {
 	return c.chacha.Load() != nil
 }
 
-func (c *TLSEcdheRsaWithChaCha20Poly1305Sha256) init(masterSecret, clientRandom, serverRandom []byte, isClient bool,
+func (c *TLSEcdheEcdsaWithChaCha20Poly1305Sha256) init(masterSecret, clientRandom, serverRandom []byte, isClient bool,
 	rfMacLen, prfKeyLen, prfIvLen int, hashFunc func() hash.Hash) error {
 
 	if masterSecret == nil {
@@ -67,22 +62,20 @@ func (c *TLSEcdheRsaWithChaCha20Poly1305Sha256) init(masterSecret, clientRandom,
 		return err
 	}
 
-	var chacha *ChaCha
+	var chachaImpl *ChaCha
 	if isClient {
-		chacha, err = NewChaCha(
-			keys.ClientWriteKey, keys.ClientWriteIV, keys.ServerWriteKey, keys.ServerWriteIV,
-		)
+		chachaImpl, err = NewChaCha(keys.ClientWriteKey, keys.ClientWriteIV, keys.ServerWriteKey, keys.ServerWriteIV)
 	} else {
-		chacha, err = NewChaCha(
-			keys.ServerWriteKey, keys.ServerWriteIV, keys.ClientWriteKey, keys.ClientWriteIV,
-		)
+		chachaImpl, err = NewChaCha(keys.ServerWriteKey, keys.ServerWriteIV, keys.ClientWriteKey, keys.ClientWriteIV)
 	}
-	c.chacha.Store(chacha)
-
+	if err != nil {
+		return err
+	}
+	c.chacha.Store(chachaImpl)
 	return nil
 }
 
-func (c *TLSEcdheRsaWithChaCha20Poly1305Sha256) Init(masterSecret, clientRandom, serverRandom []byte, isClient bool) error {
+func (c *TLSEcdheEcdsaWithChaCha20Poly1305Sha256) Init(masterSecret, clientRandom, serverRandom []byte, isClient bool) error {
 	const (
 		prfMacLen = 0
 		prfKeyLen = 32
@@ -93,21 +86,19 @@ func (c *TLSEcdheRsaWithChaCha20Poly1305Sha256) Init(masterSecret, clientRandom,
 }
 
 // Encrypt encrypts a single TLS RecordLayer.
-func (c *TLSEcdheRsaWithChaCha20Poly1305Sha256) Encrypt(pkt *recordlayer.RecordLayer, raw []byte) ([]byte, error) {
+func (c *TLSEcdheEcdsaWithChaCha20Poly1305Sha256) Encrypt(pkt *recordlayer.RecordLayer, raw []byte) ([]byte, error) {
 	cipherSuite, ok := c.chacha.Load().(*ChaCha)
 	if !ok {
 		return nil, fmt.Errorf("%w, unable to encrypt", &protocol.TemporaryError{Err: errors.New("CipherSuite has not been initialized")})
 	}
-
 	return cipherSuite.Encrypt(pkt, raw)
 }
 
 // Decrypt decrypts a single TLS RecordLayer.
-func (c *TLSEcdheRsaWithChaCha20Poly1305Sha256) Decrypt(h recordlayer.Header, raw []byte) ([]byte, error) {
+func (c *TLSEcdheEcdsaWithChaCha20Poly1305Sha256) Decrypt(h recordlayer.Header, raw []byte) ([]byte, error) {
 	cipherSuite, ok := c.chacha.Load().(*ChaCha)
 	if !ok {
 		return nil, fmt.Errorf("%w, unable to decrypt", &protocol.TemporaryError{Err: errors.New("CipherSuite has not been initialized")})
 	}
-
 	return cipherSuite.Decrypt(h, raw)
 }

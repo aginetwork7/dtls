@@ -2,7 +2,6 @@ package customercryptociphersuite
 
 import (
 	"crypto/cipher"
-	"crypto/rand"
 	"encoding/binary"
 	"fmt"
 
@@ -14,8 +13,7 @@ import (
 )
 
 const (
-	// 8 bytes of 0xff.
-	// https://datatracker.ietf.org/doc/html/rfc9146#name-record-payload-protection
+	// seqNumPlaceholder used only for CID builder path (RFC9146).
 	seqNumPlaceholder = 0xffffffffffffffff
 )
 
@@ -45,15 +43,28 @@ func NewChaCha(localKey, localIV, remoteKey, remoteIV []byte) (*ChaCha, error) {
 	return c, nil
 }
 
-// Encrypt encrypts a DTLS RecordLayer message using ChaCha20-Poly1305
+func buildSeq64(epoch uint16, seq48 uint64) uint64 {
+	return (uint64(epoch) << 48) | (seq48 & ((1 << 48) - 1))
+}
+
+
+func buildNonce(writeIV []byte, epoch uint16, seq48 uint64) []byte {
+	var padded [12]byte
+	// padded[0..3] == 0x00
+	binary.BigEndian.PutUint64(padded[4:], buildSeq64(epoch, seq48))
+	nonce := make([]byte, 12)
+	for i := 0; i < 12; i++ {
+		nonce[i] = writeIV[i] ^ padded[i]
+	}
+	return nonce
+}
+
 func (c *ChaCha) Encrypt(pkt *recordlayer.RecordLayer, raw []byte) ([]byte, error) {
 	payload := raw[pkt.Header.Size():]
 	raw = raw[:pkt.Header.Size()]
 
-	nonce := append(append([]byte{}, c.localWriteIV[:4]...), make([]byte, 8)...)
-	if _, err := rand.Read(nonce[4:]); err != nil {
-		return nil, err
-	}
+	// compute nonce from epoch+sequence, XOR with localWriteIV
+	nonce := buildNonce(c.localWriteIV, pkt.Header.Epoch, pkt.Header.SequenceNumber)
 
 	var additionalData []byte
 	if pkt.Header.ContentType == protocol.ContentTypeConnectionID {
@@ -64,7 +75,6 @@ func (c *ChaCha) Encrypt(pkt *recordlayer.RecordLayer, raw []byte) ([]byte, erro
 
 	encryptedPayload := c.localCipher.Seal(nil, nonce, payload, additionalData)
 
-	encryptedPayload = append(nonce[4:], encryptedPayload...)
 	raw = append(raw, encryptedPayload...)
 
 	binary.BigEndian.PutUint16(raw[pkt.Header.Size()-2:], uint16(len(raw)-pkt.Header.Size()))
@@ -72,7 +82,6 @@ func (c *ChaCha) Encrypt(pkt *recordlayer.RecordLayer, raw []byte) ([]byte, erro
 	return raw, nil
 }
 
-// Decrypt decrypts a DTLS RecordLayer message using ChaCha20-Poly1305
 func (c *ChaCha) Decrypt(header recordlayer.Header, in []byte) ([]byte, error) {
 	if err := header.Unmarshal(in); err != nil {
 		return nil, err
@@ -80,12 +89,13 @@ func (c *ChaCha) Decrypt(header recordlayer.Header, in []byte) ([]byte, error) {
 	switch {
 	case header.ContentType == protocol.ContentTypeChangeCipherSpec:
 		return in, nil
-	case len(in) <= (8 + header.Size()):
-		return nil, fmt.Errorf("not enough room for nonce")
+	case len(in) <= header.Size():
+		return nil, fmt.Errorf("not enough room for ciphertext")
 	}
 
-	nonce := append(append([]byte{}, c.remoteWriteIV[:4]...), in[header.Size():header.Size()+8]...)
-	out := in[header.Size()+8:]
+	out := in[header.Size():]
+
+	nonce := buildNonce(c.remoteWriteIV, header.Epoch, header.SequenceNumber)
 
 	var additionalData []byte
 	if header.ContentType == protocol.ContentTypeConnectionID {
@@ -94,42 +104,40 @@ func (c *ChaCha) Decrypt(header recordlayer.Header, in []byte) ([]byte, error) {
 		additionalData = generateAEADAdditionalData(&header, len(out)-chacha20poly1305.Overhead)
 	}
 
-	plain, err := c.remoteCipher.Open(out[:0], nonce, out, additionalData)
+	plain, err := c.remoteCipher.Open(nil, nonce, out, additionalData)
 	if err != nil {
 		return nil, fmt.Errorf("decrypt failed: %v", err)
 	}
 	return append(in[:header.Size()], plain...), nil
 }
 
+// generateAEADAdditionalData follows DTLS/TLS AEAD additional data format (13 bytes)
 func generateAEADAdditionalData(h *recordlayer.Header, payloadLen int) []byte {
 	var additionalData [13]byte
-
-	binary.BigEndian.PutUint64(additionalData[:], h.SequenceNumber)
-	binary.BigEndian.PutUint16(additionalData[:], h.Epoch)
+	seq64 := buildSeq64(h.Epoch, h.SequenceNumber)
+	binary.BigEndian.PutUint64(additionalData[0:], seq64)
 	additionalData[8] = byte(h.ContentType)
 	additionalData[9] = h.Version.Major
 	additionalData[10] = h.Version.Minor
-	//nolint:gosec //G115
-	binary.BigEndian.PutUint16(additionalData[len(additionalData)-2:], uint16(payloadLen))
-
+	// length occupies last two bytes
+	binary.BigEndian.PutUint16(additionalData[11:], uint16(payloadLen))
 	return additionalData[:]
 }
 
-// generateAEADAdditionalDataCID generates additional data for AEAD ciphers
-// according to https://datatracker.ietf.org/doc/html/rfc9146#name-aead-ciphers
 func generateAEADAdditionalDataCID(h *recordlayer.Header, payloadLen int) []byte {
 	var builder cryptobyte.Builder
 
+	// Use placeholder for 8 bytes seq as RFC9146 expects specific layout
 	builder.AddUint64(seqNumPlaceholder)
 	builder.AddUint8(uint8(protocol.ContentTypeConnectionID))
-	builder.AddUint8(uint8(len(h.ConnectionID))) //nolint:gosec //G115
+	builder.AddUint8(uint8(len(h.ConnectionID))) // connection id len
 	builder.AddUint8(uint8(protocol.ContentTypeConnectionID))
 	builder.AddUint8(h.Version.Major)
 	builder.AddUint8(h.Version.Minor)
 	builder.AddUint16(h.Epoch)
 	util.AddUint48(&builder, h.SequenceNumber)
 	builder.AddBytes(h.ConnectionID)
-	builder.AddUint16(uint16(payloadLen)) //nolint:gosec //G115
+	builder.AddUint16(uint16(payloadLen))
 
 	return builder.BytesOrPanic()
 }
