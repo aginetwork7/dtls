@@ -24,14 +24,12 @@ func TestChaChaEncryptDecrypt(t *testing.T) {
 		t.Fatalf("rand read serverRandom: %v", err)
 	}
 
-	csClient := &TLSEcdheRsaWithChaCha20Poly1305Sha256{
-	}
+	csClient := &TLSEcdheEcdsaWithChaCha20Poly1305Sha256{}
 	if err := csClient.Init(masterSecret, clientRandom, serverRandom, true); err != nil {
 		t.Fatalf("client Init failed: %v", err)
 	}
 
-	csServer := &TLSEcdheRsaWithChaCha20Poly1305Sha256{
-	}
+	csServer := &TLSEcdheEcdsaWithChaCha20Poly1305Sha256{}
 	if err := csServer.Init(masterSecret, clientRandom, serverRandom, false); err != nil {
 		t.Fatalf("server Init failed: %v", err)
 	}
@@ -46,7 +44,6 @@ func TestChaChaEncryptDecrypt(t *testing.T) {
 	}
 
 	plaintext := []byte("hello chacha20-poly1305 in pion/dtls!")
-
 
 	hb, err := rl.Header.Marshal()
 	if err != nil {
