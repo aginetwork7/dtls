@@ -2,7 +2,6 @@ package customercryptociphersuite
 
 import (
 	"crypto/rand"
-	"fmt"
 	"testing"
 
 	"golang.org/x/crypto/chacha20poly1305"
@@ -70,6 +69,6 @@ func TestChaCha(t *testing.T) {
 			panic(err)
 		}
 
-		fmt.Printf("%s\n", plaintext)
+		t.Log("Decrypted:", string(plaintext))
 	}
 }
